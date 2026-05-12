@@ -6,7 +6,10 @@ import json
 import os
 import random
 import re
+import smtplib
 import webbrowser
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 
 import feedparser
@@ -48,6 +51,8 @@ RSS_MACRO = [
 ]
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+EMAIL_TO = "tommykraak123@gmail.com"
 
 DEAL_KEYWORDS = [
     "acqui", "merger", "deal", "buys", "purchase", "takeover",
@@ -1249,14 +1254,34 @@ def generate():
     )
 
 
+def send_email(html):
+    if not GMAIL_APP_PASSWORD:
+        print("No GMAIL_APP_PASSWORD set — skipping email.")
+        return
+    today = datetime.date.today().strftime("%A, %B %-d %Y")
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"Healthcare Morning Brief — {today}"
+    msg["From"] = EMAIL_TO
+    msg["To"] = EMAIL_TO
+    msg.attach(MIMEText(html, "html"))
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(EMAIL_TO, GMAIL_APP_PASSWORD)
+        server.sendmail(EMAIL_TO, EMAIL_TO, msg.as_string())
+    print(f"Email sent to {EMAIL_TO}.")
+
+
 def main():
-    """Local use: generate brief, save to file, open in browser."""
     html = generate()
     out = Path.home() / "healthcare_brief.html"
     out.write_text(html, encoding="utf-8")
     print(f"Saved → {out}")
-    webbrowser.open(f"file://{out}")
-    print("Opened in browser. Good morning!")
+    send_email(html)
+    try:
+        webbrowser.open(f"file://{out}")
+        print("Opened in browser. Good morning!")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
