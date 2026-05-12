@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Market Update — run each morning to open your daily briefing."""
 
+import base64
 import datetime
+import io
 import json
 import os
 import random
@@ -54,6 +56,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 GMAIL_SENDER = "0tyler.1306@gmail.com"
 EMAIL_TO = "0tyler.1306@gmail.com"
+
+_ytd_data_cache = None
 
 DEAL_KEYWORDS = [
     "acqui", "merger", "deal", "buys", "purchase", "takeover",
@@ -1207,7 +1211,9 @@ def generate():
     summary = build_market_summary(market_data)
 
     print("Fetching YTD index performance...")
+    global _ytd_data_cache
     ytd_data = fetch_ytd_performance()
+    _ytd_data_cache = ytd_data
 
     print("Fetching healthcare & FDA news...")
     hc_entries  = fetch_rss(RSS_HEALTHCARE, limit=6)
@@ -1255,6 +1261,74 @@ def generate():
     )
 
 
+def chart_to_base64(ytd_data):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+    except ImportError:
+        return None
+
+    benchmark = [d for d in ytd_data if d["is_benchmark"]]
+    rest = sorted([d for d in ytd_data if not d["is_benchmark"]], key=lambda x: x["ytd"], reverse=True)
+
+    fig, ax = plt.subplots(figsize=(7, 3))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    for d in benchmark + rest:
+        color = TICKER_COLORS.get(d["name"], "#999999")
+        dates = [datetime.datetime.strptime(dt, "%Y-%m-%d") for dt in d["dates"]]
+        ax.plot(dates, d["values"],
+                color=color,
+                linestyle="--" if d["is_benchmark"] else "-",
+                linewidth=2.2 if d["is_benchmark"] else 1.6,
+                label=d["name"])
+
+    ax.axhline(0, color="#d1d5db", linewidth=0.8)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{'+'if v>=0 else ''}{v:.0f}%"))
+    ax.tick_params(labelsize=9, colors="#6b7280")
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
+    for spine in ["left", "bottom"]:
+        ax.spines[spine].set_color("#e5e7eb")
+    ax.grid(axis="y", color="#f3f4f6", linewidth=0.8)
+    ax.legend(loc="upper left", fontsize=8, frameon=False, ncol=4)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode()
+
+
+def make_email_html(html, ytd_data):
+    if not ytd_data:
+        return html
+    chart_b64 = chart_to_base64(ytd_data)
+    if not chart_b64:
+        return html
+    img_tag = (
+        f'<img src="data:image/png;base64,{chart_b64}" '
+        f'style="width:100%;max-width:700px;display:block;margin:8px auto" alt="YTD Performance">'
+    )
+    html = re.sub(
+        r'<div style="position:relative;height:300px">\s*<canvas id="ytdChart"></canvas>\s*</div>',
+        img_tag,
+        html,
+    )
+    html = re.sub(
+        r'<script>\s*\(function\(\)\{[\s\S]*?ytdChart[\s\S]*?\}\)\(\);\s*</script>',
+        "",
+        html,
+    )
+    return html
+
+
 def send_email(html):
     if not GMAIL_APP_PASSWORD:
         print("No GMAIL_APP_PASSWORD set — skipping email.")
@@ -1264,7 +1338,7 @@ def send_email(html):
     msg["Subject"] = f"Healthcare Morning Brief — {today}"
     msg["From"] = GMAIL_SENDER
     msg["To"] = EMAIL_TO
-    msg.attach(MIMEText(html, "html"))
+    msg.attach(MIMEText(make_email_html(html, _ytd_data_cache), "html"))
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
