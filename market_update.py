@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Market Update — run each morning to open your daily briefing."""
 
-import base64
 import datetime
 import io
 import json
@@ -10,6 +9,7 @@ import random
 import re
 import smtplib
 import webbrowser
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -1303,18 +1303,13 @@ def chart_to_base64(ytd_data):
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+    return buf.read()
 
 
-def make_email_html(html, ytd_data):
-    if not ytd_data:
-        return html
-    chart_b64 = chart_to_base64(ytd_data)
-    if not chart_b64:
-        return html
+def make_email_html(html):
     img_tag = (
-        f'<img src="data:image/png;base64,{chart_b64}" '
-        f'style="width:100%;max-width:700px;display:block;margin:8px auto" alt="YTD Performance">'
+        '<img src="cid:ytdchart" '
+        'style="width:100%;max-width:700px;display:block;margin:8px auto" alt="YTD Performance">'
     )
     html = re.sub(
         r'<div style="position:relative;height:300px">\s*<canvas id="ytdChart"></canvas>\s*</div>',
@@ -1334,15 +1329,28 @@ def send_email(html):
         print("No GMAIL_APP_PASSWORD set — skipping email.")
         return
     today = datetime.date.today().strftime("%A, %B %-d %Y")
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Healthcare Morning Brief — {today}"
-    msg["From"] = GMAIL_SENDER
-    msg["To"] = EMAIL_TO
-    msg.attach(MIMEText(make_email_html(html, _ytd_data_cache), "html"))
+
+    chart_bytes = chart_to_base64(_ytd_data_cache) if _ytd_data_cache else None
+
+    outer = MIMEMultipart("related")
+    outer["Subject"] = f"Healthcare Morning Brief — {today}"
+    outer["From"] = GMAIL_SENDER
+    outer["To"] = EMAIL_TO
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(make_email_html(html), "html"))
+    outer.attach(alt)
+
+    if chart_bytes:
+        img = MIMEImage(chart_bytes, name="chart.png")
+        img.add_header("Content-ID", "<ytdchart>")
+        img.add_header("Content-Disposition", "inline", filename="chart.png")
+        outer.attach(img)
+
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_SENDER, EMAIL_TO, msg.as_string())
+        server.sendmail(GMAIL_SENDER, EMAIL_TO, outer.as_string())
     print(f"Email sent to {EMAIL_TO}.")
 
 
