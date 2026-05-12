@@ -52,7 +52,8 @@ RSS_MACRO = [
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-EMAIL_TO = "tommykraak123@gmail.com"
+GMAIL_SENDER = "tommykraak123@gmail.com"
+EMAIL_TO = "0tyler.1306@gmail.com"
 
 DEAL_KEYWORDS = [
     "acqui", "merger", "deal", "buys", "purchase", "takeover",
@@ -1261,13 +1262,13 @@ def send_email(html):
     today = datetime.date.today().strftime("%A, %B %-d %Y")
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"Healthcare Morning Brief — {today}"
-    msg["From"] = EMAIL_TO
+    msg["From"] = GMAIL_SENDER
     msg["To"] = EMAIL_TO
     msg.attach(MIMEText(html, "html"))
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
-        server.login(EMAIL_TO, GMAIL_APP_PASSWORD)
-        server.sendmail(EMAIL_TO, EMAIL_TO, msg.as_string())
+        server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_SENDER, EMAIL_TO, msg.as_string())
     print(f"Email sent to {EMAIL_TO}.")
 
 
