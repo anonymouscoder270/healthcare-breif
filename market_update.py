@@ -52,7 +52,7 @@ RSS_MACRO = [
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-GMAIL_SENDER = "tommykraak123@gmail.com"
+GMAIL_SENDER = "0tyler.1306@gmail.com"
 EMAIL_TO = "0tyler.1306@gmail.com"
 
 DEAL_KEYWORDS = [
